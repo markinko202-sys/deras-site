@@ -25,3 +25,11 @@ count=$(ls "$OUT/d" | wc -l | tr -d ' ')
 echo "{\"frames\": $count, \"ext\": \"jpg\", \"sets\": [$sets]}" > "$OUT/manifest.json"
 du -sh "$OUT"/d "$OUT"/m ${PORT:+"$OUT/p"}
 echo "✓ $SCENE: $count frames"
+
+# rebuild media/manifest.js from every scene's manifest.json
+python3 - <<'PY'
+import json, glob, os
+m = {os.path.basename(os.path.dirname(f)): json.load(open(f)) for f in sorted(glob.glob("media/*/manifest.json"))}
+open("media/manifest.js", "w").write("window.DERAS_MEDIA = " + json.dumps(m) + ";\n")
+PY
+echo "✓ media/manifest.js updated"

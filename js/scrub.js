@@ -1,5 +1,6 @@
 // Scroll-scrubbed scenes: each .scene pins a canvas and maps scroll progress to a frame.
-// Real footage = JPG frame sequence in media/<scene>/{d,m,p}/0001.jpg + manifest.json (see tools/prep.sh).
+// Real footage = JPG frame sequence in media/<scene>/{d,m,p}/0001.jpg, listed in media/manifest.js (see tools/prep.sh).
+// Classic scripts, no ES modules, so the page also works when opened straight from disk.
 // Until footage exists, a procedural placeholder is drawn so the page still reads.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -8,7 +9,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 
 const DPR = Math.min(window.devicePixelRatio || 1, window.innerWidth < 700 ? 1.5 : 2);
 
-export class Scene {
+class Scene {
   constructor(el) {
     this.el = el;
     this.name = el.dataset.scene;
@@ -46,12 +47,9 @@ export class Scene {
   async load() {
     if (this.loading) return;
     this.loading = true;
-    let man;
-    try {
-      const res = await fetch(`media/${this.name}/manifest.json`, { cache: 'no-cache' });
-      if (!res.ok) return;
-      man = await res.json();
-    } catch { return; }
+    // manifest comes from media/manifest.js (a plain script, so it also works when opened as file://)
+    const man = (window.DERAS_MEDIA || {})[this.name];
+    if (!man) return;
 
     const portrait = window.innerWidth / window.innerHeight < 0.8;
     const small = window.innerWidth * DPR < 1300;
@@ -113,6 +111,10 @@ export class Scene {
 
   drawCover(img) {
     const { ctx, W, H } = this;
+    // the placeholder may have left a car-space transform / glow behind
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
     const s = Math.max(W / img.naturalWidth, H / img.naturalHeight);
     const w = img.naturalWidth * s, h = img.naturalHeight * s;
     ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
@@ -333,4 +335,5 @@ const placeholder = {
     ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H);
   },
 };
-export { placeholder };
+window.DerasScene = Scene;
+window.DerasPlaceholder = placeholder;

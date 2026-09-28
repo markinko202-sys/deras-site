@@ -1,6 +1,4 @@
-import { Scene } from './scrub.js?v=1';
-
-const scenes = [...document.querySelectorAll('.scene')].map(el => new Scene(el));
+const scenes = [...document.querySelectorAll('.scene')].map(el => new window.DerasScene(el));
 const bar = document.getElementById('progress-bar');
 const nav = document.getElementById('nav');
 
