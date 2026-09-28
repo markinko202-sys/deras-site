@@ -333,3 +333,4 @@ const placeholder = {
     ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H);
   },
 };
+export { placeholder };
