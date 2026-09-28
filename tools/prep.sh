@@ -13,12 +13,12 @@ dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$SRC")
 fps=$(python3 -c "print($N/$dur)")
 grade="eq=contrast=1.04:saturation=0.92"   # keep it strict and dark; tweak if needed
 
-ffmpeg -v error -y -i "$SRC" -vf "fps=$fps,$grade,scale=1920:-2:flags=lanczos" -q:v 4 -frames:v $N "$OUT/d/%04d.jpg"
-ffmpeg -v error -y -i "$SRC" -vf "fps=$fps,$grade,scale=1080:-2:flags=lanczos" -q:v 5 -frames:v $N "$OUT/m/%04d.jpg"
+ffmpeg -v error -y -i "$SRC" -vf "fps=$fps,$grade,scale='min(1920,iw)':-2:flags=lanczos" -q:v 4 -frames:v $N "$OUT/d/%04d.jpg"
+ffmpeg -v error -y -i "$SRC" -vf "fps=$fps,$grade,scale='min(960,iw)':-2:flags=lanczos" -q:v 5 -frames:v $N "$OUT/m/%04d.jpg"
 sets='"d","m"'
 if [[ -n "$PORT" ]]; then
   mkdir -p "$OUT/p"
-  ffmpeg -v error -y -i "$PORT" -vf "fps=$fps,$grade,scale=1080:-2:flags=lanczos" -q:v 5 -frames:v $N "$OUT/p/%04d.jpg"
+  ffmpeg -v error -y -i "$PORT" -vf "fps=$fps,$grade,scale='min(960,iw)':-2:flags=lanczos" -q:v 5 -frames:v $N "$OUT/p/%04d.jpg"
   sets='"d","m","p"'
 fi
 count=$(ls "$OUT/d" | wc -l | tr -d ' ')
