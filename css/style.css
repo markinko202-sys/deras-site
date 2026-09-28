@@ -126,6 +126,11 @@ a { color: inherit; }
 }
 .beat { text-shadow: 0 2px 28px rgba(10,10,9,.9), 0 0 2px rgba(10,10,9,.6); }
 .beat.on, .callout.on { opacity: 1; visibility: visible; transform: none; transition: opacity .7s var(--ease), transform .9s var(--ease), visibility 0s; }
+/* soft dark scrim so copy stays legible over bright footage */
+.beat-left::before, .beat-right::before, .beat-top::before, .beat-bottom::before {
+  content: ""; position: absolute; inset: -30% -20%; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(10,10,9,.72), rgba(10,10,9,.35) 60%, transparent);
+}
 .beat-center { inset: 0; display: grid; place-content: center; text-align: center; padding: 0 var(--gut); }
 .beat-center .lede { margin-inline: auto; }
 .beat-left { left: var(--gut); bottom: 18vh; max-width: min(640px, 88vw); }
