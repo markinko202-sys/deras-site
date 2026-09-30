@@ -6,9 +6,9 @@
   const MODELS = [
     { key: 'kilat', name: 'Kilat', kicker: 'Two-door GT', gloss: '<em>kilat</em> — lightning',
       acc: 2.9, kw: 612, km: 540, x: 312, xlabel: 'Top speed', xunit: 'km/h', price: 'RM 698,000', tint: '214,178,122' },
-    { key: 'senja', name: 'Senja', kicker: 'Four-seat grand tourer', gloss: '<em>senja</em> — dusk',
+    { key: 'senja', name: 'Senja', kicker: 'Four-door shooting brake', gloss: '<em>senja</em> — dusk',
       acc: 3.8, kw: 480, km: 680, x: 270, xlabel: 'Top speed', xunit: 'km/h', price: 'RM 548,000', tint: '196,110,92' },
-    { key: 'rimba', name: 'Rimba', kicker: 'Raised all-wheel drive', gloss: '<em>rimba</em> — jungle',
+    { key: 'rimba', name: 'Rimba', kicker: 'All-terrain SUV', gloss: '<em>rimba</em> — jungle',
       acc: 4.4, kw: 420, km: 590, x: 210, xlabel: 'Ground clearance', xunit: 'mm', price: 'RM 462,000', tint: '150,170,128' },
   ];
   const PLAY_MS = 3400;           // one drive-off + arrival, whatever the source video length
