@@ -337,3 +337,4 @@ const placeholder = {
 };
 window.DerasScene = Scene;
 window.DerasPlaceholder = placeholder;
+window.DerasDraw = { bodyPath, glassPath, wheel, frame, carSpace, floor };
