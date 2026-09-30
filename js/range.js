@@ -11,7 +11,7 @@
     { key: 'rimba', name: 'Rimba', kicker: 'All-terrain SUV', gloss: '<em>rimba</em> — jungle',
       acc: 4.4, kw: 420, km: 590, x: 210, xlabel: 'Ground clearance', xunit: 'mm', price: 'RM 462,000', tint: '150,170,128' },
   ];
-  const PLAY_MS = 3400;           // one drive-off + arrival, whatever the source video length
+  const PLAY_MS = 3600;           // one drive-off + arrival, whatever the source video length
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -45,7 +45,7 @@
           if (this.frames[i]) continue;
           const img = new Image();
           img.src = `media/${this.name}/${set}/${String(i + 1).padStart(4, '0')}.${m.ext || 'jpg'}`;
-          try { await img.decode(); this.frames[i] = img; if (!busy) drawIdle(); } catch {}
+          try { await img.decode(); this.frames[i] = img; if (!busy && !shown) drawIdle(); } catch {}
         }
       };
       for (let k = 0; k < 6; k++) worker();
@@ -59,25 +59,57 @@
   }
   // transitions[i] goes from model i to model i+1
   const transitions = MODELS.map((_, i) => new FrameSet(`range-${i + 1}`));
-  const stills = MODELS.map(m => { const img = new Image(); img.onload = () => !busy && drawIdle(); img.src = `img/range-${m.key}.jpg`; return img; });
+  const stills = MODELS.map(m => { const img = new Image(); img.onload = () => !busy && !shown && drawIdle(); img.src = `img/range-${m.key}.jpg`; return img; });
 
   // ---------- drawing ----------
   function resize() {
     const r = canvas.getBoundingClientRect();
     W = canvas.width = Math.max(1, Math.round(r.width * DPR));
     H = canvas.height = Math.max(1, Math.round(r.height * DPR));
-    if (!busy) drawIdle();
+    if (!busy) { if (shown) cover(shown); else drawIdle(); }
   }
-  function cover(img) {
+  // The footage has the car centred; on wide screens push it into the right part of the stage
+  // (the specs sit on the left) and feather the edges of the frame into the studio black.
+  const BG = '#080706';
+  function place(img) {
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    let s, x, y;
+    if (W / H > 1.2) {
+      s = Math.min(W * 0.8 / iw, H * 0.96 / ih);
+      x = W - iw * s + W * 0.05; y = (H - ih * s) / 2 + H * 0.02;
+    } else if (W / H < 0.85) {
+      s = W * 1.15 / iw; x = (W - iw * s) / 2; y = H * 0.14;
+    } else {
+      s = Math.max(W / iw, H / ih); x = (W - iw * s) / 2; y = (H - ih * s) / 2;
+    }
+    return { x, y, w: iw * s, h: ih * s };
+  }
+  function cover(img, alpha = 1) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const s = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-    const w = img.naturalWidth * s, h = img.naturalHeight * s;
-    ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+    const r = place(img);
+    if (alpha >= 1) { ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H); }
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, r.x, r.y, r.w, r.h);
+    ctx.globalAlpha = 1;
+    if (alpha < 1) return;
+    const fx = r.w * 0.14, fy = r.h * 0.12;
+    const edge = (x0, y0, x1, y1, rx, ry, rw, rh) => {
+      const g = ctx.createLinearGradient(x0, y0, x1, y1);
+      g.addColorStop(0, BG); g.addColorStop(1, 'rgba(8,7,6,0)');
+      ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, rh);
+    };
+    if (r.x > 0) edge(r.x, 0, r.x + fx, 0, r.x - 1, 0, fx + 1, H);
+    if (r.y > 0) edge(0, r.y, 0, r.y + fy, 0, r.y - 1, W, fy + 1);
+    if (r.y + r.h < H) edge(0, r.y + r.h, 0, r.y + r.h - fy, 0, r.y + r.h - fy, W, fy + 1);
+    if (r.x + r.w < W) edge(r.x + r.w, 0, r.x + r.w - fx, 0, r.x + r.w - fx, 0, fx + 1, H);
   }
+  // what is on screen right now, so a click can fade from it and a resize can redraw it
+  let shown = null;
+  function show(img) { shown = img; cover(img); }
   function drawIdle() {
     const t = transitions[cur], back = transitions[(cur + MODELS.length - 1) % MODELS.length];
     const img = (t.ok && t.frames?.[0]) || (back.ok && back.frames?.[back.frames.length - 1]) || (stills[cur].naturalWidth && stills[cur]);
-    if (img) cover(img); else drawPlaceholder(cur, cur, 1);
+    if (img) show(img); else drawPlaceholder(cur, cur, 1);
   }
   // placeholder: car A drives off to the left, car B arrives from the right and stops
   function drawPlaceholder(from, to, p) {
@@ -147,12 +179,18 @@
     root.classList.add('is-moving', dir > 0 ? 'dir-next' : 'dir-prev');
     info.classList.add('out');
     const t0 = performance.now(), dur = reduce ? 1 : PLAY_MS;
-    let swapped = false;
+    let swapped = false, last = null;
+    const startImg = shown;
     const tick = now => {
       const k = Math.min(1, (now - t0) / dur);
       const p = dir > 0 ? k : 1 - k;
       const img = seq.ok && seq.at(p);
-      if (img) cover(img); else drawPlaceholder(dir > 0 ? from : to, dir > 0 ? to : from, p);
+      if (img) {
+        cover(img);
+        const fade = 1 - (now - t0) / 250;
+        if (startImg && startImg !== img && fade > 0) cover(startImg, fade);
+        last = img;
+      } else drawPlaceholder(dir > 0 ? from : to, dir > 0 ? to : from, p);
       root.style.setProperty('--run', k);
       if (!swapped && k > 0.55) { swapped = true; cur = to; setInfo(to, true); info.classList.remove('out'); }
       if (k < 1) requestAnimationFrame(tick);
@@ -160,7 +198,7 @@
         busy = false; cur = to;
         root.classList.remove('is-moving', 'dir-next', 'dir-prev');
         root.style.setProperty('--run', 0);
-        drawIdle();
+        if (last) show(last); else drawIdle();
       }
     };
     requestAnimationFrame(tick);
