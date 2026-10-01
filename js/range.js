@@ -27,37 +27,30 @@
 
   // ---------- frame sequences ----------
   class FrameSet {
-    constructor(name) { this.name = name; this.man = (window.DERAS_MEDIA || {})[name]; this.frames = null; }
+    constructor(name) { this.name = name; this.man = (window.DERAS_MEDIA || {})[name]; this.store = null; }
     get ok() { return !!this.man; }
+    get frames() { return this.store && this.store.loaded ? this.store : null; }
     load() {
-      if (!this.man || this.frames) return;
+      if (!this.man || this.store) return;
       const m = this.man;
       const set = (window.DerasPhone || innerWidth < 900) && m.sets.includes('m') ? 'm' : 'd';   // the light set on phones
       const n = (m.counts && m.counts[set]) || m.frames;
-      const frames = this.frames = new Array(n);
-      const order = [], seen = new Set();
-      for (const step of [24, 8, 4, 2, 1]) for (let i = 0; i < n; i += step) if (!seen.has(i)) { seen.add(i); order.push(i); }
-      // first and last frames matter most: they are the idle poses
-      order.splice(1, 0, n - 1);
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < order.length && this.frames === frames) {
-          const i = order[cursor++];
-          if (frames[i]) continue;
-          const img = new Image();
-          img.decoding = 'async';
-          img.src = `media/${this.name}/${set}/${String(i + 1).padStart(4, '0')}.${m.ext || 'jpg'}`;
-          try { await img.decode(); if (this.frames === frames) { frames[i] = img; if (!busy && !shown) drawIdle(); } } catch {}
-        }
-      };
-      for (let k = 0; k < (window.DerasPhone ? 3 : 6); k++) worker();
+      this.n = n;
+      this.store = new window.DerasFrames.FrameStore(`media/${this.name}/${set}`, n, m.ext || 'jpg', { phone: !!window.DerasPhone, workers: window.DerasPhone ? 3 : 6, keep: 40, pin: [0, n - 1] });
+      this.store.onFrame = i => { if (!busy && (i === 0 || i === n - 1)) drawIdle(); };
+      this.store.start([0, n - 1]);                    // the idle poses first
+      this.store.focus(0);
     }
-    unload() { if (!busy) this.frames = null; }
+    unload() { if (!busy && this.store) { this.store.dispose(); this.store = null; } }
+    first() { return this.store?.get(0) || null; }
+    last() { return this.store?.get(this.n - 1) || null; }
+    // frame + blend partner for playback position p (0..1)
     at(p) {
-      if (!this.frames) return null;
-      const n = this.frames.length, i = Math.round(p * (n - 1));
-      for (let d = 0; d < n; d++) { if (this.frames[i - d]) return this.frames[i - d]; if (this.frames[i + d]) return this.frames[i + d]; }
-      return null;
+      const st = this.store; if (!st || !st.loaded) return null;
+      const f = p * (this.n - 1), i = Math.floor(f);
+      st.focus(Math.round(f));
+      const a = st.get(i) || st.nearest(i); if (!a) return null;
+      return { a, b: a === st.get(i) ? st.get(i + 1) : null, t: f - i };
     }
   }
   // transitions[i] goes from model i to model i+1
@@ -75,7 +68,7 @@
   // (the specs sit on the left) and feather the edges of the frame into the studio black.
   const BG = '#080706';
   function place(img) {
-    const iw = img.naturalWidth, ih = img.naturalHeight;
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     let s, x, y;
     if (W / H > 1.2) {
       s = Math.min(W * 0.8 / iw, H * 0.96 / ih);
@@ -87,12 +80,15 @@
     }
     return { x, y, w: iw * s, h: ih * s };
   }
-  function cover(img, alpha = 1) {
+  // draw a frame (optionally blended with the next one by t), then feather the edges
+  function cover(img, alpha = 1, next = null, t = 0) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingQuality = 'high';
     const r = place(img);
     if (alpha >= 1) { ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H); }
     ctx.globalAlpha = alpha;
     ctx.drawImage(img, r.x, r.y, r.w, r.h);
+    if (next && t > 0.02) { ctx.globalAlpha = alpha * t; ctx.drawImage(next, r.x, r.y, r.w, r.h); }
     ctx.globalAlpha = 1;
     if (alpha < 1) return;
     const fx = r.w * 0.14, fy = r.h * 0.12;
@@ -111,7 +107,7 @@
   function show(img) { shown = img; cover(img); }
   function drawIdle() {
     const t = transitions[cur], back = transitions[(cur + MODELS.length - 1) % MODELS.length];
-    const img = (t.ok && t.frames?.[0]) || (back.ok && back.frames?.[back.frames.length - 1]) || (stills[cur].naturalWidth && stills[cur]);
+    const img = (t.ok && t.first()) || (back.ok && back.last()) || null;
     if (img) show(img); else drawPlaceholder(cur, cur, 1);
   }
   // placeholder: car A drives off to the left, car B arrives from the right and stops
@@ -187,12 +183,12 @@
     const tick = now => {
       const k = Math.min(1, (now - t0) / dur);
       const p = dir > 0 ? k : 1 - k;
-      const img = seq.ok && seq.at(p);
-      if (img) {
-        cover(img);
+      const fr = seq.ok && seq.at(p);
+      if (fr) {
+        cover(fr.a, 1, fr.b, fr.t);
         const fade = 1 - (now - t0) / 250;
-        if (startImg && startImg !== img && fade > 0) cover(startImg, fade);
-        last = img;
+        if (startImg && startImg !== fr.a && fade > 0) cover(startImg, fade);
+        last = k >= 1 ? (dir > 0 ? seq.last() : seq.first()) || fr.a : fr.a;
       } else drawPlaceholder(dir > 0 ? from : to, dir > 0 ? to : from, p);
       root.style.setProperty('--run', k);
       if (!swapped && k > 0.55) { swapped = true; cur = to; setInfo(to, true); info.classList.remove('out'); }

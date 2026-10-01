@@ -30,10 +30,9 @@ class Scene {
     this.beats = [...el.querySelectorAll('[data-in]')];
     this.target = 0;
     this.p = 0;
-    this.frames = null;       // Array<ImageBitmap|HTMLImageElement|undefined>
+    this.store = null;        // DerasFrames.FrameStore
     this.count = 0;
-    this.loading = false;
-    this.lastDrawn = -1;
+    this.dirty = true;
     this.resize();
   }
 
@@ -43,7 +42,7 @@ class Scene {
     this.H = Math.max(1, Math.round(r.height * DPR));
     this.canvas.width = this.W;
     this.canvas.height = this.H;
-    this.lastDrawn = -1;
+    this.dirty = true;
   }
 
   measure() {
@@ -53,54 +52,30 @@ class Scene {
     this.visible = r.bottom > 0 && r.top < window.innerHeight;
   }
 
-  async load() {
-    if (this.loading) return;
+  load() {
+    if (this.store) return;
     // manifest comes from media/manifest.js (a plain script, so it also works when opened as file://)
     const man = (window.DERAS_MEDIA || {})[this.name];
     if (!man) return;
-    this.loading = true;
     const set = pickSet(man);
     const n = (man.counts && man.counts[set]) || man.frames;
     this.count = n;
-    const frames = this.frames = new Array(n);
-
-    // coarse → fine, so scrubbing works long before everything is loaded
-    const order = [];
-    const seen = new Set();
-    for (const step of [24, 8, 4, 2, 1]) {
-      for (let i = 0; i < n; i += step) if (!seen.has(i)) { seen.add(i); order.push(i); }
-    }
-    const url = i => `media/${this.name}/${set}/${String(i + 1).padStart(4, '0')}.${man.ext || 'jpg'}`;
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < order.length && this.frames === frames) {
-        const i = order[cursor++];
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = url(i);
-        try { await img.decode(); if (this.frames === frames) { frames[i] = img; this.lastDrawn = -1; } } catch {}
-      }
-    };
-    await Promise.all(Array.from({ length: PHONE ? 4 : 6 }, worker));
+    this.store = new window.DerasFrames.FrameStore(`media/${this.name}/${set}`, n, man.ext || 'jpg', { phone: PHONE, workers: PHONE ? 4 : 6 });
+    this.store.onFrame = () => { this.dirty = true; };
+    this.store.start([Math.round(this.target * (n - 1))]);
   }
 
-  // drop decoded frames of a scene far from the screen (phones only) — it reloads when you come back
+  // drop the frames of a scene far from the screen (phones only) — it reloads when you come back
   unload() {
-    if (!this.frames) return;
-    this.frames = null; this.loading = false; this.lastDrawn = -1;
-  }
-
-  nearest(i) {
-    const f = this.frames;
-    for (let d = 0; d < this.count; d++) {
-      if (f[i - d]) return f[i - d];
-      if (f[i + d]) return f[i + d];
-    }
-    return null;
+    if (!this.store) return;
+    this.store.dispose(); this.store = null; this.dirty = true;
   }
 
   tick(now) {
-    this.p = Math.abs(this.target - this.p) < 0.0005 ? this.target : lerp(this.p, this.target, 0.14);
+    // frame-rate independent smoothing: the same glide on 60 Hz and 120 Hz screens
+    const dt = Math.min(0.05, ((now - (this.lastNow || now)) / 1000) || 0.016); this.lastNow = now;
+    const k = 1 - Math.exp(-dt * 11);
+    this.p = Math.abs(this.target - this.p) < 0.0004 ? this.target : this.p + (this.target - this.p) * k;
     const p = this.p;
 
     for (const b of this.beats) {
@@ -108,31 +83,34 @@ class Scene {
       if (on !== b._on) { b._on = on; b.classList.toggle('on', on); }
     }
 
-    const hasFrames = this.frames && (this.lastDrawn >= 0 || this.frames.some(Boolean));
-    if (hasFrames) {
-      const i = Math.round(p * (this.count - 1));
-      if (this.fr) this.fr.textContent = `FR ${String(i + 1).padStart(3, '0')} / ${this.count}`;
-      if (i === this.lastDrawn) return;
-      const img = this.nearest(i);
-      if (!img) return;
-      if (img === this.frames[i]) this.lastDrawn = i;
-      this.drawCover(img);
+    const st = this.store;
+    if (st && st.loaded > 0) {
+      const f = p * (this.count - 1), i = Math.floor(f), t = f - i;
+      st.focus(Math.round(f));
+      if (this.fr) this.fr.textContent = `FR ${String(Math.round(f) + 1).padStart(3, '0')} / ${this.count}`;
+      if (p === this.lastP && !this.dirty) return;          // nothing moved, nothing new decoded
+      const a = st.get(i) || st.nearest(i);
+      if (!a) return;
+      const b = st.get(i + 1);                                // blend toward the next frame between whole frames
+      this.lastP = p; this.dirty = false;
+      this.prepare();
+      window.DerasFrames.drawBlend(this.ctx, this.W, this.H, a, b, a === st.get(i) ? t : 0);
     } else {
-      if (this.fr) this.fr.textContent = `FR ${String(Math.round(p * 179) + 1).padStart(3, '0')} · placeholder`;
+      if (this.fr) this.fr.textContent = `FR ${String(Math.round(p * 179) + 1).padStart(3, '0')} · loading`;
       placeholder[this.mode]?.(this.ctx, this.W, this.H, p, now / 1000);
     }
   }
 
-  drawCover(img) {
-    const { ctx, W, H } = this;
-    // the placeholder may have left a car-space transform / glow behind
+  // the placeholder may have left a car-space transform / glow behind
+  prepare() {
+    const { ctx } = this;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
-    const s = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-    const w = img.naturalWidth * s, h = img.naturalHeight * s;
-    ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+    ctx.imageSmoothingQuality = 'high';
   }
+
+
 }
 
 /* ------------------------------------------------------------------ */
