@@ -74,7 +74,7 @@
       s = Math.min(W * 0.8 / iw, H * 0.96 / ih);
       x = W - iw * s + W * 0.05; y = (H - ih * s) / 2 + H * 0.02;
     } else if (W / H < 0.85) {
-      s = W * 1.15 / iw; x = (W - iw * s) / 2; y = H * 0.14;
+      s = W / iw; x = (W - iw * s) / 2; y = H * 0.14;            // the whole car, edge to edge
     } else {
       s = Math.max(W / iw, H / ih); x = (W - iw * s) / 2; y = (H - ih * s) / 2;
     }

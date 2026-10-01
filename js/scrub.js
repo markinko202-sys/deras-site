@@ -10,10 +10,9 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // phones: lower canvas resolution, the light frame sets, and only nearby scenes kept in memory
 const PHONE = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
 const DPR = Math.min(window.devicePixelRatio || 1, PHONE ? 1.25 : 2);
+// the whole frame is always shown on narrow screens, so phones only need the light landscape set
 function pickSet(man) {
-  const portrait = innerWidth / innerHeight < 0.8;
-  if (PHONE || innerWidth < 900) return portrait && man.sets.includes('p') ? 'p' : man.sets.includes('m') ? 'm' : 'd';
-  return 'd';
+  return (PHONE || innerWidth < 900) && man.sets.includes('m') ? 'm' : 'd';
 }
 window.DerasPhone = PHONE;
 window.DerasPickSet = pickSet;
@@ -94,7 +93,7 @@ class Scene {
       const b = st.get(i + 1);                                // blend toward the next frame between whole frames
       this.lastP = p; this.dirty = false;
       this.prepare();
-      window.DerasFrames.drawBlend(this.ctx, this.W, this.H, a, b, a === st.get(i) ? t : 0);
+      window.DerasFrames.drawBlend(this.ctx, this.W, this.H, a, b, a === st.get(i) ? t : 0, window.DerasFrames.fitRect);
     } else {
       if (this.fr) this.fr.textContent = `FR ${String(Math.round(p * 179) + 1).padStart(3, '0')} · loading`;
       placeholder[this.mode]?.(this.ctx, this.W, this.H, p, now / 1000);

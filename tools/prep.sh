@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Turn a generated video into scroll-scrub frame sequences.
-# usage: tools/prep.sh <scene> <video.mp4> [frames=192] [--no-portrait]
+# usage: tools/prep.sh <scene> <video.mp4> [frames=192] [--portrait]
 # Output in media/<scene>/:
 #   d/  desktop   — every frame, up to 1920 wide
 #   m/  phone, landscape — every frame, 800×450
-#   p/  phone, portrait  — every frame, centre crop 9:16, 450×800
+#   p/  optional 9:16 centre crop, 450×800 (--portrait)
 # Phones keep these as compressed JPEG blobs and decode only the ~30 frames around the scroll
 # position (js/frames.js), so they get every frame, sharp, without running out of memory.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-SCENE=$1; SRC=$2; N=${3:-192}; PORTRAIT=1
-[[ "${4:-}" == "--no-portrait" ]] && PORTRAIT=0
+SCENE=$1; SRC=$2; N=${3:-192}; PORTRAIT=0
+[[ "${4:-}" == "--portrait" ]] && PORTRAIT=1   # phones show the whole landscape frame; a 9:16 crop is opt-in
 OUT=media/$SCENE
 rm -rf "$OUT"/{d,m,p}; mkdir -p "$OUT"/{d,m}
 
