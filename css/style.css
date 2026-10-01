@@ -351,3 +351,8 @@ a { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* phones: cheaper text shadow over the moving footage */
+@media (pointer: coarse) {
+  .beat { text-shadow: 0 1px 10px rgba(10,10,9,.85); }
+}

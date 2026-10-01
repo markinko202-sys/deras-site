@@ -1,1 +1,1 @@
-{"frames": 240, "ext": "jpg", "sets": ["d","m"]}
+{"frames": 240, "ext": "jpg", "sets": ["d", "m", "p"], "counts": {"d": 240, "m": 120, "p": 120}}

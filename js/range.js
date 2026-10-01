@@ -31,25 +31,28 @@
     get ok() { return !!this.man; }
     load() {
       if (!this.man || this.frames) return;
-      const m = this.man, n = m.frames;
-      const set = window.innerWidth * DPR < 1300 && m.sets.includes('m') ? 'm' : 'd';
-      this.frames = new Array(n);
+      const m = this.man;
+      const set = (window.DerasPhone || innerWidth < 900) && m.sets.includes('m') ? 'm' : 'd';   // the light set on phones
+      const n = (m.counts && m.counts[set]) || m.frames;
+      const frames = this.frames = new Array(n);
       const order = [], seen = new Set();
       for (const step of [24, 8, 4, 2, 1]) for (let i = 0; i < n; i += step) if (!seen.has(i)) { seen.add(i); order.push(i); }
       // first and last frames matter most: they are the idle poses
       order.splice(1, 0, n - 1);
       let cursor = 0;
       const worker = async () => {
-        while (cursor < order.length) {
+        while (cursor < order.length && this.frames === frames) {
           const i = order[cursor++];
-          if (this.frames[i]) continue;
+          if (frames[i]) continue;
           const img = new Image();
+          img.decoding = 'async';
           img.src = `media/${this.name}/${set}/${String(i + 1).padStart(4, '0')}.${m.ext || 'jpg'}`;
-          try { await img.decode(); this.frames[i] = img; if (!busy && !shown) drawIdle(); } catch {}
+          try { await img.decode(); if (this.frames === frames) { frames[i] = img; if (!busy && !shown) drawIdle(); } } catch {}
         }
       };
-      for (let k = 0; k < 6; k++) worker();
+      for (let k = 0; k < (window.DerasPhone ? 3 : 6); k++) worker();
     }
+    unload() { if (!busy) this.frames = null; }
     at(p) {
       if (!this.frames) return null;
       const n = this.frames.length, i = Math.round(p * (n - 1));
@@ -59,7 +62,7 @@
   }
   // transitions[i] goes from model i to model i+1
   const transitions = MODELS.map((_, i) => new FrameSet(`range-${i + 1}`));
-  const stills = MODELS.map(m => { const img = new Image(); img.onload = () => !busy && !shown && drawIdle(); img.src = `img/range-${m.key}.jpg`; return img; });
+  const stills = MODELS.map(() => ({ naturalWidth: 0 }));   // no still photos: the transition videos provide every pose
 
   // ---------- drawing ----------
   function resize() {
@@ -218,6 +221,7 @@
   new IntersectionObserver(([e]) => {
     inView = e.isIntersecting;
     if (inView) transitions.forEach(t => t.load());
+    else if (window.DerasPhone) transitions.forEach(t => t.unload());   // free memory once you scroll away
   }, { rootMargin: '100% 0px', threshold: 0 }).observe(root);
   window.addEventListener('keydown', e => {
     if (!inView || e.target.closest('input, select, textarea')) return;

@@ -16,6 +16,11 @@ function onScroll() {
   nav.classList.toggle('hide', y > lastY && y > 200);
   lastY = y;
   scenes.forEach(s => s.measure());
+  // phones: free scenes that are far off screen; they reload as you scroll back (preloaded 1.5 screens ahead)
+  if (window.DerasPhone) for (const s of scenes) {
+    const r = s.el.getBoundingClientRect(), far = innerHeight * 2.6;
+    if (r.bottom < -far || r.top > innerHeight + far) s.unload();
+  }
 }
 window.addEventListener('scroll', onScroll, { passive: true });
 

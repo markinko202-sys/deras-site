@@ -7,7 +7,16 @@ const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
 const lerp = (a, b, t) => a + (b - a) * t;
 
-const DPR = Math.min(window.devicePixelRatio || 1, window.innerWidth < 700 ? 1.5 : 2);
+// phones: lower canvas resolution, the light frame sets, and only nearby scenes kept in memory
+const PHONE = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
+const DPR = Math.min(window.devicePixelRatio || 1, PHONE ? 1.25 : 2);
+function pickSet(man) {
+  const portrait = innerWidth / innerHeight < 0.8;
+  if (PHONE || innerWidth < 900) return portrait && man.sets.includes('p') ? 'p' : man.sets.includes('m') ? 'm' : 'd';
+  return 'd';
+}
+window.DerasPhone = PHONE;
+window.DerasPickSet = pickSet;
 
 class Scene {
   constructor(el) {
@@ -46,34 +55,39 @@ class Scene {
 
   async load() {
     if (this.loading) return;
-    this.loading = true;
     // manifest comes from media/manifest.js (a plain script, so it also works when opened as file://)
     const man = (window.DERAS_MEDIA || {})[this.name];
     if (!man) return;
-
-    const portrait = window.innerWidth / window.innerHeight < 0.8;
-    const small = window.innerWidth * DPR < 1300;
-    const set = portrait && man.sets.includes('p') ? 'p' : small && man.sets.includes('m') ? 'm' : 'd';
-    this.count = man.frames;
-    this.frames = new Array(man.frames);
+    this.loading = true;
+    const set = pickSet(man);
+    const n = (man.counts && man.counts[set]) || man.frames;
+    this.count = n;
+    const frames = this.frames = new Array(n);
 
     // coarse → fine, so scrubbing works long before everything is loaded
     const order = [];
     const seen = new Set();
     for (const step of [24, 8, 4, 2, 1]) {
-      for (let i = 0; i < man.frames; i += step) if (!seen.has(i)) { seen.add(i); order.push(i); }
+      for (let i = 0; i < n; i += step) if (!seen.has(i)) { seen.add(i); order.push(i); }
     }
     const url = i => `media/${this.name}/${set}/${String(i + 1).padStart(4, '0')}.${man.ext || 'jpg'}`;
     let cursor = 0;
     const worker = async () => {
-      while (cursor < order.length) {
+      while (cursor < order.length && this.frames === frames) {
         const i = order[cursor++];
         const img = new Image();
+        img.decoding = 'async';
         img.src = url(i);
-        try { await img.decode(); this.frames[i] = img; this.lastDrawn = -1; } catch {}
+        try { await img.decode(); if (this.frames === frames) { frames[i] = img; this.lastDrawn = -1; } } catch {}
       }
     };
-    await Promise.all(Array.from({ length: 6 }, worker));
+    await Promise.all(Array.from({ length: PHONE ? 4 : 6 }, worker));
+  }
+
+  // drop decoded frames of a scene far from the screen (phones only) — it reloads when you come back
+  unload() {
+    if (!this.frames) return;
+    this.frames = null; this.loading = false; this.lastDrawn = -1;
   }
 
   nearest(i) {
@@ -94,7 +108,7 @@ class Scene {
       if (on !== b._on) { b._on = on; b.classList.toggle('on', on); }
     }
 
-    const hasFrames = this.frames && this.frames.some(Boolean);
+    const hasFrames = this.frames && (this.lastDrawn >= 0 || this.frames.some(Boolean));
     if (hasFrames) {
       const i = Math.round(p * (this.count - 1));
       if (this.fr) this.fr.textContent = `FR ${String(i + 1).padStart(3, '0')} / ${this.count}`;
