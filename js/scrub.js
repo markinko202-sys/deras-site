@@ -23,7 +23,7 @@ const CAMERA = {                         // [progress, tightness]: 0 = whole car
   '01-reveal': [[0, 1], [0.5, 1], [0.84, 0]],
   '02-design': [[0, 1], [0.38, 1], [0.86, 0.05]],
   '03-rear':   [[0, 0], [1, 0]],
-  '04-cabin':  [[0, 1], [1, 1]],
+  '04-cabin':  [[0, 1], [0.72, 1], [0.9, 0.2]],
 };
 const ease = t => t * t * (3 - 2 * t);
 function keyed(keys, p) {
@@ -48,11 +48,15 @@ function phoneCamera(scene, f, p) {
     const minVw = (W / H) / (iw / ih);                            // the window when the frame fills the screen height
     const span = sample(tr.x1, ti) - sample(tr.x0, ti);
     const fitVw = Math.min(1, Math.max(minVw, span * 1.14 + 0.05)); // the whole car plus a little air
-    const vw = fitVw + (minVw - fitVw) * keyed(CAMERA[scene.name], p);
+    let vw = fitVw + (minVw - fitVw) * keyed(CAMERA[scene.name], p);
+    // the outro: once the animation has played, pull back to the WHOLE final frame, dead centre
+    const out = ease(Math.min(1, Math.max(0, (p - 0.8) / 0.17)));
+    vw += (1 - vw) * out;
     const s = W / (iw * vw), w = iw * s, h = ih * s;
     let x = W / 2 - sample(tr.fx, ti) * w;
     x = Math.min(0, Math.max(W - w, x));                          // never show past the frame edge
-    const y = (H - h) / 2 - (H - h) * 0.16;                       // sit a little above centre, text lives below
+    x += ((W - w) / 2 - x) * out;
+    const y = (H - h) / 2 - (H - h) * 0.12 * (1 - out);           // a little above centre while playing, centred at the end
     return { x, y, w, h, contain: h < H - 1 };
   };
 }
