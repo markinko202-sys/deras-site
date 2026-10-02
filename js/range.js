@@ -62,7 +62,7 @@
     const r = canvas.getBoundingClientRect();
     W = canvas.width = Math.max(1, Math.round(r.width * DPR));
     H = canvas.height = Math.max(1, Math.round(r.height * DPR));
-    if (!busy) { if (shown) cover(shown); else drawIdle(); }
+    if (!busy) { if (usable(shown)) cover(shown); else drawIdle(); }
   }
   // The footage has the car centred; on wide screens push it into the right part of the stage
   // (the specs sit on the left) and feather the edges of the frame into the studio black.
@@ -80,8 +80,12 @@
     }
     return { x, y, w: iw * s, h: ih * s };
   }
+  // a released ImageBitmap (phones free memory when you scroll away) has zero size — never draw one
+  const usable = img => !!img && (img.naturalWidth || img.width) > 0;
   // draw a frame (optionally blended with the next one by t), then feather the edges
   function cover(img, alpha = 1, next = null, t = 0) {
+    if (!usable(img)) return false;
+    if (!usable(next)) next = null;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingQuality = 'high';
     const r = place(img);
@@ -104,11 +108,11 @@
   }
   // what is on screen right now, so a click can fade from it and a resize can redraw it
   let shown = null;
-  function show(img) { shown = img; cover(img); }
+  function show(img) { if (!usable(img)) return; shown = img; cover(img); }
   function drawIdle() {
     const t = transitions[cur], back = transitions[(cur + MODELS.length - 1) % MODELS.length];
     const img = (t.ok && t.first()) || (back.ok && back.last()) || null;
-    if (img) show(img); else drawPlaceholder(cur, cur, 1);
+    if (usable(img)) show(img); else drawPlaceholder(cur, cur, 1);
   }
   // placeholder: car A drives off to the left, car B arrives from the right and stops
   function drawPlaceholder(from, to, p) {
@@ -178,27 +182,34 @@
     root.classList.add('is-moving', dir > 0 ? 'dir-next' : 'dir-prev');
     info.classList.add('out');
     const t0 = performance.now(), dur = reduce ? 1 : PLAY_MS;
-    let swapped = false, last = null;
-    const startImg = shown;
+    let swapped = false, last = null, done = false;
+    const startImg = usable(shown) ? shown : null;
+    const finish = () => {
+      if (done) return;
+      done = true; busy = false; cur = to;
+      if (!swapped) { setInfo(to, true); info.classList.remove('out'); }
+      root.classList.remove('is-moving', 'dir-next', 'dir-prev');
+      root.style.setProperty('--run', 0);
+      try { if (usable(last)) show(last); else drawIdle(); } catch { /* keep the UI alive no matter what */ }
+    };
+    const watchdog = setTimeout(finish, dur + 1500);   // never leave the switcher stuck "moving"
     const tick = now => {
-      const k = Math.min(1, (now - t0) / dur);
+      if (done) return;
+      const k = Math.max(0, Math.min(1, (performance.now() - t0) / dur));
       const p = dir > 0 ? k : 1 - k;
-      const fr = seq.ok && seq.at(p);
-      if (fr) {
-        cover(fr.a, 1, fr.b, fr.t);
-        const fade = 1 - (now - t0) / 250;
-        if (startImg && startImg !== fr.a && fade > 0) cover(startImg, fade);
-        last = k >= 1 ? (dir > 0 ? seq.last() : seq.first()) || fr.a : fr.a;
-      } else drawPlaceholder(dir > 0 ? from : to, dir > 0 ? to : from, p);
+      try {
+        const fr = seq.ok && seq.at(p);
+        if (fr && usable(fr.a)) {
+          cover(fr.a, 1, fr.b, fr.t);
+          const fade = 1 - (performance.now() - t0) / 250;
+          if (startImg && startImg !== fr.a && fade > 0) cover(startImg, fade);
+          last = k >= 1 ? (dir > 0 ? seq.last() : seq.first()) || fr.a : fr.a;
+        } else drawPlaceholder(dir > 0 ? from : to, dir > 0 ? to : from, p);
+      } catch { /* a bad frame must not stop the animation */ }
       root.style.setProperty('--run', k);
       if (!swapped && k > 0.55) { swapped = true; cur = to; setInfo(to, true); info.classList.remove('out'); }
       if (k < 1) requestAnimationFrame(tick);
-      else {
-        busy = false; cur = to;
-        root.classList.remove('is-moving', 'dir-next', 'dir-prev');
-        root.style.setProperty('--run', 0);
-        if (last) show(last); else drawIdle();
-      }
+      else { clearTimeout(watchdog); finish(); }
     };
     requestAnimationFrame(tick);
   }
