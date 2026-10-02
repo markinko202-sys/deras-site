@@ -15,6 +15,47 @@ function pickSet(man) {
   return (PHONE || innerWidth < 900) && man.sets.includes('m') ? 'm' : 'd';
 }
 window.DerasPhone = PHONE;
+
+// ---- the phone "camera": on a vertical screen we cut a moving window out of the landscape footage.
+// It follows the car (tools/track.py measured where it is in every frame) and zooms so the whole
+// car fits; per-scene "tight" keys push in to a full-height shot for drama, then pull back.
+const CAMERA = {                         // [progress, tightness]: 0 = whole car, 1 = full screen height
+  '01-reveal': [[0, 1], [0.5, 1], [0.84, 0]],
+  '02-design': [[0, 1], [0.38, 1], [0.86, 0.05]],
+  '03-rear':   [[0, 0], [1, 0]],
+  '04-cabin':  [[0, 1], [1, 1]],
+};
+const ease = t => t * t * (3 - 2 * t);
+function keyed(keys, p) {
+  if (!keys) return 0;
+  if (p <= keys[0][0]) return keys[0][1];
+  for (let k = 1; k < keys.length; k++) {
+    if (p <= keys[k][0]) { const [p0, v0] = keys[k - 1], [p1, v1] = keys[k]; return v0 + (v1 - v0) * ease((p - p0) / (p1 - p0)); }
+  }
+  return keys[keys.length - 1][1];
+}
+function sample(arr, f) {
+  if (!arr) return null;
+  const i = Math.max(0, Math.min(arr.length - 1, f)), a = Math.floor(i), b = Math.min(arr.length - 1, a + 1);
+  return arr[a] + (arr[b] - arr[a]) * (i - a);
+}
+// returns a fit function for drawBlend, or null to use the default (landscape screens)
+function phoneCamera(scene, f, p) {
+  return (img, W, H) => {
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (W / H > 0.95 || !scene.track) return window.DerasFrames.fitRect(img, W, H);
+    const tr = scene.track, n = scene.count, ti = f * ((tr.fx.length - 1) / Math.max(1, n - 1));
+    const minVw = (W / H) / (iw / ih);                            // the window when the frame fills the screen height
+    const span = sample(tr.x1, ti) - sample(tr.x0, ti);
+    const fitVw = Math.min(1, Math.max(minVw, span * 1.14 + 0.05)); // the whole car plus a little air
+    const vw = fitVw + (minVw - fitVw) * keyed(CAMERA[scene.name], p);
+    const s = W / (iw * vw), w = iw * s, h = ih * s;
+    let x = W / 2 - sample(tr.fx, ti) * w;
+    x = Math.min(0, Math.max(W - w, x));                          // never show past the frame edge
+    const y = (H - h) / 2 - (H - h) * 0.16;                       // sit a little above centre, text lives below
+    return { x, y, w, h, contain: h < H - 1 };
+  };
+}
 window.DerasPickSet = pickSet;
 
 class Scene {
@@ -59,6 +100,7 @@ class Scene {
     const set = pickSet(man);
     const n = (man.counts && man.counts[set]) || man.frames;
     this.count = n;
+    this.track = man.track || null;
     this.store = new window.DerasFrames.FrameStore(`media/${this.name}/${set}`, n, man.ext || 'jpg', { phone: PHONE, workers: PHONE ? 4 : 6 });
     this.store.onFrame = () => { this.dirty = true; };
     this.store.start([Math.round(this.target * (n - 1))]);
@@ -93,7 +135,7 @@ class Scene {
       const b = st.get(i + 1);                                // blend toward the next frame between whole frames
       this.lastP = p; this.dirty = false;
       this.prepare();
-      window.DerasFrames.drawBlend(this.ctx, this.W, this.H, a, b, a === st.get(i) ? t : 0, window.DerasFrames.fitRect);
+      window.DerasFrames.drawBlend(this.ctx, this.W, this.H, a, b, a === st.get(i) ? t : 0, phoneCamera(this, f, p));
     } else {
       if (this.fr) this.fr.textContent = `FR ${String(Math.round(p * 179) + 1).padStart(3, '0')} · loading`;
       placeholder[this.mode]?.(this.ctx, this.W, this.H, p, now / 1000);
